@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "config.h"
 #include "drw.h"
 #include "util.h"
 
@@ -201,10 +200,10 @@ void drw_rect(Drw *drw, int x, int y, unsigned int w, unsigned int h,
                           : drw->scheme[ColFg].pixel);
     if (filled && h < 40) {
         if (rounded) {
-            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h - 4);
+            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h - 2);
             XSetForeground(drw->dpy, drw->gc, drw->scheme[ColDetail].pixel);
-            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y + h - 4, w,
-                           4);
+            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y + h - 2, w,
+                           2);
         } else {
             XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
         }
@@ -241,10 +240,10 @@ int drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h,
         XSetForeground(drw->dpy, drw->gc,
                        drw->scheme[invert ? ColFg : ColBg].pixel);
         if (rounded) {
-            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h - 4);
+            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h - 2);
             XSetForeground(drw->dpy, drw->gc, drw->scheme[ColDetail].pixel);
-            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y + h - 4, w,
-                           4);
+            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y + h - 2, w,
+                           2);
         } else {
             XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
         }
@@ -309,10 +308,15 @@ int drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h,
             // the last part is a horrible hack
             // TODO: find out why the emoji picker has loads of utf8 errors
             // and some infinite loop
-            if (overflow || !charexists || nextfont || (lines >= 1 && utf8err))
+            if (overflow || !charexists || nextfont)
                 break;
-            else
-                charexists = 0;
+
+            if (utf8err) {
+                text += utf8charlen;
+                break;
+            }
+
+            charexists = 0;
         }
 
         if (utf8strlen) {

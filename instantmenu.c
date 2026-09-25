@@ -330,7 +330,7 @@ static void drawmenu(void) {
     unsigned int curpos;
     struct item *item;
     int x = 0, y = 0, fh = drw->fonts->h, w;
-    int arrowwidth = TEXTW("");
+    int arrowwidth = TEXTW("arr");
 
     char *censort;
     drw_setscheme(drw, scheme[SchemeNorm]);
@@ -338,15 +338,14 @@ static void drawmenu(void) {
     if (commented && matches)
         prompt = sel->text + 1;
 
+    if (leftcmd)
+        x += arrowwidth;
     if (prompt && *prompt) {
-        if (leftcmd)
-            x += arrowwidth;
         drw_setscheme(drw, scheme[SchemeSel]);
         if (lines < 8) {
-            x = drw_text(drw, x, 0, promptw, bh * (lines + 1), lrpad / 2,
-                         prompt, 0, 1);
+            x = drw_text(drw, x, 0, promptw, bh * (lines + 1), lrpad / 2, prompt, 0, 1);
         } else {
-            x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0, 1);
+            x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0, 0);
         }
     }
 
@@ -361,11 +360,11 @@ static void drawmenu(void) {
         free(censort);
     } else {
         if (text[0] != '\0') {
-            drw_text(drw, x + (leftcmd ? arrowwidth : 0), 0, w, bh, lrpad / 2,
+            drw_text(drw, x, 0, w, bh, lrpad / 2,
                      text, 0, 0);
         } else if (searchtext) {
             drw_setscheme(drw, scheme[SchemeFade]);
-            drw_text(drw, x + (leftcmd ? arrowwidth : 0), 0, w, bh, lrpad / 2,
+            drw_text(drw, x, 0, w, bh, lrpad / 2,
                      searchtext, 0, 0);
             drw_setscheme(drw, scheme[SchemeNorm]);
         }
@@ -375,7 +374,7 @@ static void drawmenu(void) {
         drw_setscheme(drw, scheme[SchemeNorm]);
         // disable cursor on password prompt
         if (!passwd && !toast)
-            drw_rect(drw, x + (leftcmd ? arrowwidth : 0) + curpos,
+            drw_rect(drw, x + curpos,
                      2 + (bh - fh) / 2, 2, fh - 4, 1, 0, 0);
     }
 
@@ -419,12 +418,11 @@ static void drawmenu(void) {
     if (lines > 0) {
         if (leftcmd) {
             drw_setscheme(drw, scheme[SchemeHighlight]);
-            drw_text(drw, 0, 0, arrowwidth, bh, lrpad / 2, "", 0, 0);
+            drw_text(drw, 0, 0, arrowwidth, bh, (arrowwidth - TEXTW("")) * 0.5 + 10, "", 0, 1);
         }
         if (rightcmd) {
             drw_setscheme(drw, scheme[SchemeHighlight]);
-            drw_text(drw, mw - arrowwidth, 0, arrowwidth, bh, lrpad / 2, "",
-                     0, 0);
+            drw_text(drw, mw - arrowwidth, 0, arrowwidth, bh, (arrowwidth - TEXTW("")), "", 0, 1);
         }
     }
     drw_map(drw, win, 0, 0, mw, mh);
@@ -444,7 +442,7 @@ static void grabfocus(void) {
             return;
         if (managed) {
             XTextProperty prop;
-            char *windowtitle = prompt != NULL ? prompt : "dmenu";
+            char *windowtitle = (char *)(prompt != NULL ? prompt : "dmenu");
             Xutf8TextListToTextProperty(dpy, &windowtitle, 1, XUTF8StringStyle,
                                         &prop);
             XSetWMName(dpy, win, &prop);
@@ -474,16 +472,15 @@ static void grabkeyboard(void) {
      */
     for (i = 0; i < 1000; i++) {
         if (XGrabKeyboard(dpy, DefaultRootWindow(dpy), True, GrabModeAsync,
-                          GrabModeAsync, CurrentTime) == GrabSuccess)
-            return;
+                          GrabModeAsync, CurrentTime) == GrabSuccess) {
+          /* one off attempt at grabbing the mouse pointer to avoid interactions
+           * with other windows while dmenu is active */
+          XGrabPointer(dpy, DefaultRootWindow(dpy), True, ButtonPressMask, GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+          return;
+        }
         nanosleep(&ts, NULL);
     }
     die("cannot grab keyboard");
-}
-
-static void grabpointer(void) {
-    XGrabPointer(dpy, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync,
-                 None, XCreateFontCursor(dpy, XC_fleur), CurrentTime);
 }
 
 int compare_distance(const void *a, const void *b) {
@@ -584,7 +581,7 @@ static void match(void) {
     if (commented) {
         struct item *it;
         for (it = items; it && it->text; it++) {
-            if (text && it->text[0] == text[0]) {
+            if (text[0] && it->text[0] == text[0]) {
                 puts(it->text);
                 cleanup();
                 exit(0);
@@ -719,10 +716,6 @@ static void movewordedge(int dir) {
 }
 
 static void keyrelease(XKeyEvent *ev) {
-    char buf[32];
-    int len;
-    KeySym ksym;
-    Status status;
     if (!alttab)
         return;
     if (tabbed) {
@@ -745,7 +738,10 @@ static void keyrelease(XKeyEvent *ev) {
     }
 }
 
-double easeOutQuint(double t) { return 1 + (--t) * t * t; }
+double easeOutQuint(double t) {
+    t -= 1;
+    return 1 + t * t * t;
+}
 
 void animatesel() {
     if (!animated || !framecount)
@@ -771,10 +767,10 @@ void animatesel() {
     }
 }
 
-void spawn(char *cmd) {
+void spawn(const char *cmd) {
     char command[1000];
-    strcpy(command, cmd);
-    strcat(command, " &> /dev/null");
+
+    snprintf(command, sizeof(command), "%s &> /dev/null", cmd);
     system(command);
     exit(0);
 }
@@ -799,7 +795,7 @@ void animaterect(int x1, int y1, int w1, int h1, int x2, int y2, int w2,
 }
 
 void cmdtrigger(int direction) {
-    char *tmpcmd;
+    const char *tmpcmd;
 
     animated = 1;
     if (direction) {
@@ -1334,8 +1330,14 @@ static void buttonpress(XEvent *e) {
     XButtonPressedEvent *ev = &e->xbutton;
     int x = 0, y = 0, h = bh, w;
 
-    if (ev->window != win)
-        return;
+    if (ev->window != win) {
+      /* automatically close dmenu if the user clicks outside of dmenu, but
+       * ignore the scroll wheel and buttons above that */
+      if (ev->button <= Button3) {
+        exit(1);
+      }
+      return;
+    }
 
     /* right-click: exit */
     if (ev->button == Button3)
@@ -1591,8 +1593,7 @@ static void setup(void) {
     for (j = 0; j < SchemeOut; ++j) {
         for (i = 0; i < ColLast; ++i) {
             if (colortemp[j][i])
-                free(colors[j]
-                           [i]); // only free if overwritten with new colortemp
+                free((void *)colors[j][i]);
         }
     }
 
@@ -1860,12 +1861,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "-T")) /* launch instantmenu in a toast mode
                                             that times out after a while */
             toast = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "-ct")) { /* activate instantASSIST mode */
-            commented = 1;
-            static char commentprompt[200];
-            prompt = commentprompt + 1;
-            strcpy(prompt, "prompts");
-        } else if (!strcmp(argv[i], "-c")) /* centers instantmenu on screen */
+       else if (!strcmp(argv[i], "-c")) /* centers instantmenu on screen */
             centered = 1;
         else if (!strcmp(argv[i], "-C")) /* go to mouse position */
             followcursor = 1;
@@ -2008,12 +2004,12 @@ int main(int argc, char *argv[]) {
         die("no fonts could be loaded.");
 
     if (tempfont)
-        free(fonts[0]);
+        free((void *)fonts[0]);
 
     lrpad = drw->fonts->h;
 
     if (fullheight || lineheight == -1)
-        lineheight = drw->fonts->h * 2.5;
+        lineheight = drw->fonts->h * 1.75;
 
     if (prompt && dmw && TEXTW(prompt) + 100 > dmw && dmw < mw - 300)
         dmw += TEXTW(prompt);
