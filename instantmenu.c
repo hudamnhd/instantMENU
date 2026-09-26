@@ -40,7 +40,7 @@ struct item {
     char *text;
     char *stext;
     struct item *left, *right;
-    int out;
+    int id; /* for multiselect */
     double distance;
 };
 
@@ -67,6 +67,8 @@ static int commented = 0;
 
 static int rejectnomatch = 0;
 
+static int *selid = NULL;
+static unsigned int selidsize = 0;
 static Atom clip, utf8;
 static Display *dpy;
 static Window root, parentwin, win;
@@ -105,6 +107,44 @@ static const int outputoffset[ItemLast] = {
 
 static int (*fstrncmp)(const char *, const char *, size_t) = strncmp;
 static char *(*fstrstr)(const char *, const char *) = strstr;
+
+static int issel(size_t id) {
+	for (int i = 0;i < selidsize;i++)
+		if (selid[i] == id)
+			return 1;
+	return 0;
+}
+
+static int togglesel(struct item *item) {
+	int i;
+	size_t n;
+	int *p;
+
+	if (!item)
+		return 0;
+
+	if (issel(item->id)) {
+		for (i = 0; i < selidsize; i++) {
+			if (selid[i] == item->id) {
+				memmove(&selid[i], &selid[i + 1],
+				        (selidsize - i - 1) * sizeof(*selid));
+				selidsize--;
+				return 1;
+			}
+		}
+	} else {
+		n = selidsize + 1;
+		p = realloc(selid, n * sizeof(*selid));
+		if (!p)
+			return 0;
+
+		selid = p;
+		selid[selidsize++] = item->id;
+		return 1;
+	}
+
+	return 0;
+}
 
 int getrootptr(int *x, int *y) {
     int di;
@@ -173,6 +213,7 @@ static void cleanup(void) {
     drw_free(drw);
     XSync(dpy, False);
     XCloseDisplay(dpy);
+    free(selid);
 }
 
 static char *cistrstr(const char *h, const char *n) {
@@ -251,7 +292,7 @@ static int drawitem(struct item *item, int x, int y, int w) {
     } else {
         if (item == sel)
             drw_setscheme(drw, scheme[SchemeSel]);
-        else if (item->out)
+     else if (issel(item->id))
             drw_setscheme(drw, scheme[SchemeOut]);
         else
             drw_setscheme(drw, scheme[SchemeNorm]);
@@ -323,7 +364,7 @@ static void recalculatenumbers() {
     } else {
         tempnumer = 0;
     }
-    snprintf(numbers, NUMBERSBUFSIZE, "%d/%d", numer, denom);
+    snprintf(numbers, NUMBERSBUFSIZE, "%d/%d (%d)", numer, denom, selidsize);
 }
 
 static void drawmenu(void) {
@@ -733,8 +774,7 @@ static void keyrelease(XKeyEvent *ev) {
             cleanup();
             exit(0);
         }
-        if (sel)
-            sel->out = 1;
+        togglesel(sel);
     }
 }
 
@@ -837,6 +877,8 @@ static void keypress(XKeyEvent *ev) {
     int i;
     struct item *tmpsel;
     int offscreen = 0;
+    int allselected = 1;
+
 
     len = XmbLookupString(xic, ev, buf, sizeof buf, &ksym, &status);
     switch (status) {
@@ -852,7 +894,26 @@ static void keypress(XKeyEvent *ev) {
     if (ev->state & ControlMask) {
         switch (ksym) {
         case XK_a:
-            ksym = XK_Home;
+            for (struct item *item = items; item; item = item->right) {
+              if (!issel(item->id)) {
+                allselected = 0;
+                break;
+              }
+            }
+
+            if (allselected) {
+              free(selid);
+              selid = NULL;
+              selidsize = 0;
+            } else {
+              for (struct item *item = items; item; item = item->right) {
+                if (!issel(item->id)) {
+                  selidsize++;
+                  selid = realloc(selid, selidsize * sizeof(*selid));
+                  selid[selidsize - 1] = item->id;
+                }
+              }
+            }
             break;
         case XK_b:
             ksym = XK_Left;
@@ -930,7 +991,21 @@ static void keypress(XKeyEvent *ev) {
             goto draw;
         case XK_Return:
         case XK_KP_Enter:
-            break;
+          if (sel && issel(sel->id)) {
+            for (int i = 0;i < selidsize;i++)
+              if (selid[i] == sel->id)
+                selid[i] = -1;
+          } else {
+            for (int i = 0;i < selidsize;i++)
+              if (selid[i] == -1) {
+                selid[i] = sel->id;
+                return;
+              }
+            selidsize++;
+            selid = realloc(selid, (selidsize + 1) * sizeof(int));
+            selid[selidsize - 1] = sel->id;
+          }
+           break;
         case XK_1:
             selectnumber(0, ev, &ksym);
             break;
@@ -958,6 +1033,18 @@ static void keypress(XKeyEvent *ev) {
         case XK_9:
             selectnumber(8, ev, &ksym);
             break;
+        case XK_Tab:
+            if (!alttab) {
+                if (!sel)
+                    return;
+                cursor = strnlen(sel->text, sizeof text - 1);
+                memcpy(text, sel->text, cursor);
+                text[cursor] = '\0';
+                match();
+            } else {
+                tabbed = 1;
+            }
+            break;
 
         case XK_bracketleft:
             cleanup();
@@ -966,6 +1053,24 @@ static void keypress(XKeyEvent *ev) {
             return;
         }
     } else if (ev->state & ShiftMask) {
+        switch (ksym) {
+        case XK_ISO_Left_Tab:
+
+            if (!(ev->state & Mod1Mask)) {
+              togglesel(sel);
+              if (sel && sel->left && (sel = sel->left)->right == curr) {
+                  curr = prev;
+                  calcoffsets();
+              }
+            }
+            break;
+        case XK_Return:
+        case XK_KP_Enter:
+            puts(text);
+            break;
+        default:
+            return;
+        }
         if (alttab) {
             if (sel) {
                 if (sel == items) {
@@ -1162,14 +1267,19 @@ static void keypress(XKeyEvent *ev) {
             break;
         animatesel();
 
-        puts((sel && !(ev->state & ShiftMask & (!rejectnomatch))) ? sel->text
-                                                                  : text);
         if (!(ev->state & ControlMask)) {
-            cleanup();
-            exit(0);
+          if (selidsize) {
+            for (int i = 0; i < selidsize; i++)
+              if (selid[i] != -1 && (!sel || sel->id != selid[i]))
+                puts(items[selid[i]].text);
+          } else {
+            if (sel && !(ev->state & ShiftMask))
+              puts(sel->text);
+          }
+
+          cleanup();
+          exit(0);
         }
-        if (sel)
-            sel->out = 1;
         break;
     case XK_Right:
     case XK_KP_Right:
@@ -1212,16 +1322,14 @@ static void keypress(XKeyEvent *ev) {
         }
         break;
     case XK_Tab:
-        if (!alttab) {
-            if (!sel)
-                return;
-            cursor = strnlen(sel->text, sizeof text - 1);
-            memcpy(text, sel->text, cursor);
-            text[cursor] = '\0';
-            match();
-        } else {
-            tabbed = 1;
+        if (!(ev->state & Mod1Mask)) {
+          togglesel(sel);
+          if (sel && sel->right && (sel = sel->right) == next) {
+              curr = next;
+              calcoffsets();
+          }
         }
+
         break;
     }
 
@@ -1340,8 +1448,18 @@ static void buttonpress(XEvent *e) {
     }
 
     /* right-click: exit */
-    if (ev->button == Button3)
-        exit(1);
+    if (ev->button == Button3) {
+        if (selidsize) {
+          for (int i = 0; i < selidsize; i++)
+            if (selid[i] != -1 && (!sel || sel->id != selid[i]))
+              puts(items[selid[i]].text);
+
+          cleanup();
+          exit(0);
+        } else {
+          exit(1);
+        }
+    }
 
     if (prompt && *prompt)
         x += promptw;
@@ -1356,9 +1474,9 @@ static void buttonpress(XEvent *e) {
         if ((lines <= 0 && ev->x >= 0 &&
              ev->x <= x + w + ((!prev || !curr->left) ? TEXTW("<") : 0)) ||
             (lines > 0 && ev->y >= y && ev->y <= y + h)) {
-            if (leftcmd && ev->x < TEXTW("")) {
+            if (leftcmd && ev->x < TEXTW("arr")) {
                 cmdtrigger(0);
-            } else if (ev->x > mw - TEXTW("")) {
+            } else if (ev->x > mw - TEXTW("arr")) {
                 cmdtrigger(1);
             } else {
                 insert(NULL, -cursor);
@@ -1373,13 +1491,13 @@ static void buttonpress(XEvent *e) {
                 if (sel && sel->text[0] == '>')
                     return;
                 animatesel();
-                puts(item->text);
-                if (!(ev->state & ControlMask))
-                    exit(0);
-                sel = item;
-                if (sel) {
-                    sel->out = 1;
-                    drawmenu();
+                if (!(ev->state & ControlMask)) {
+                  puts(item->text);
+                  exit(0);
+                } else {
+                  sel = item;
+                  togglesel(sel);
+                  drawmenu();
                 }
                 return;
             } else if (matches) {
@@ -1402,13 +1520,13 @@ static void buttonpress(XEvent *e) {
                         if (sel && item->text[0] == '>')
                             break;
                         animatesel();
-                        puts(item->text);
-                        if (!(ev->state & ControlMask))
-                            exit(0);
-                        sel = item;
-                        if (sel) {
-                            sel->out = 1;
-                            drawmenu();
+                        if (!(ev->state & ControlMask)) {
+                          puts(item->text);
+                          exit(0);
+                        } else {
+                          sel = item;
+                          togglesel(sel);
+                          drawmenu();
                         }
                         return;
                     }
@@ -1487,7 +1605,7 @@ static void readstdin(void) {
             line[len - 1] = '\0';
         if (!(items[i].text = strdup(line)) || !(items[i].stext = strdup(line)))
             die("strdup:");
-        items[i].out = 0;
+        items[i].id = i; /* for multiselect */
     }
     free(line);
     if (items)

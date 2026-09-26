@@ -24,7 +24,7 @@ static unsigned int lineheight = 0; /* -h option; minimum height of a menu line 
 
 /* -fn option overrides fonts[0]; default X11 font or font set */
 static const char *fonts[] = {
-    "JetBrainsMonoNL Nerd Font:style=Medium:size=14",
+    "JetBrainsMonoNL Nerd Font:style=Medium:size=10",
     "JetBrainsMonoNL Nerd Font:style=Medium:size=16",
     "JoyPixels:pixelsize=20:antialias=true:autohint=true",
 };
@@ -40,7 +40,7 @@ static const char *colors[SchemeLast][9] = {
     [SchemeFade]      = {"#7c6f64", "#282828", "#d79921"},
     [SchemeHighlight] = {"#928374", "#363331", "#554E47"},
     [SchemeHover]     = {"#928374", "#302E2C", "#49443F"},
-    [SchemeOut]       = {"#292725", "#B08D62", "#695C4D"},
+    [SchemeOut]       = {"#d79921", "#32302f", "#d79921"},
     [SchemeGreen]     = {"#292725", "#7F9170", "#59634F"},
     [SchemeRed]       = {"#292725", "#B4776F", "#69504B"},
     [SchemeYellow]    = {"#292725", "#B09568", "#6B5D49"},

@@ -202,8 +202,7 @@ void drw_rect(Drw *drw, int x, int y, unsigned int w, unsigned int h,
         if (rounded) {
             XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h - 2);
             XSetForeground(drw->dpy, drw->gc, drw->scheme[ColDetail].pixel);
-            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y + h - 2, w,
-                           2);
+            XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y + h - 2, w, 2);
         } else {
             XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
         }
